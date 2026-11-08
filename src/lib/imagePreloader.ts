@@ -48,6 +48,13 @@ export function preloadImage(url: string, priority: "high" | "low" = "low") {
   return image;
 }
 
+export function getCachedImage(url: string) {
+  const image = imageCache.get(url);
+  if (!image) return null;
+  touch(url, image);
+  return image;
+}
+
 function waitForImage(image: HTMLImageElement) {
   return new Promise<boolean>((resolve) => {
     if (image.complete) {

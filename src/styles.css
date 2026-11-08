@@ -1790,12 +1790,30 @@ kbd {
   animation: spin 1s linear infinite;
 }
 
+.reader-image-loader__label strong {
+  margin-left: 2px;
+  color: #f0dcc5;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 .reader-image-loader__track {
   width: min(190px, 46vw);
   height: 3px;
   overflow: hidden;
   border-radius: 999px;
   background: rgba(248, 238, 230, 0.12);
+}
+
+.reader-image-loader__track.is-determinate span {
+  animation: none;
+  transition: width 140ms linear;
+}
+
+.reader-image-loader__bytes {
+  color: rgba(187, 174, 162, 0.78);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
 }
 
 .reader-image-loader__track span {
@@ -4488,7 +4506,7 @@ input[type="checkbox"] {
     transition-duration: 0.01ms !important;
   }
 
-  .reader-image-loader__track span {
+  .reader-image-loader__track:not(.is-determinate) span {
     width: 100%;
     opacity: 0.58;
     transform: none;

@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ErrorState, LoadingState } from "../components/LoadingState";
+import { useProgressiveImage } from "../hooks/useProgressiveImage";
 import { useLibrary } from "../hooks/useLibrary";
 import { preloadImages } from "../lib/imagePreloader";
 import type { ImagePreloadProgress } from "../lib/imagePreloader";
@@ -48,6 +49,21 @@ function getPreloadPlan() {
   }
   if (deviceMemory && deviceMemory <= 4) return { behind: 1, ahead: 3, adjacentChapter: 1 };
   return { behind: 1, ahead: 6, adjacentChapter: 2 };
+}
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function isSameOriginAsset(url: string) {
+  if (!url || url.startsWith("data:") || url.startsWith("blob:")) return true;
+  try {
+    return new URL(url, window.location.href).origin === window.location.origin;
+  } catch {
+    return false;
+  }
 }
 
 export function ReaderPage() {
@@ -120,6 +136,7 @@ function ReaderExperience({
   const [continuousTarget, setContinuousTarget] = useState<number | null>(null);
   const [imageLoading, setImageLoading] = useState(true);
   const [imageFailed, setImageFailed] = useState(false);
+  const [imageReloadToken, setImageReloadToken] = useState(0);
   const [preloadProgress, setPreloadProgress] = useState<PreloadProgressState | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [endCardVisible, setEndCardVisible] = useState(false);
@@ -127,8 +144,41 @@ function ReaderExperience({
   const continuousObserver = useRef<IntersectionObserver | null>(null);
   const pendingScrollIndex = useRef<number | null>(null);
 
+  const attachPageImage = useCallback((image: HTMLImageElement | null) => {
+    imageRef.current = image;
+    if (!image) return;
+
+    const finishLoading = () => {
+      if (imageRef.current !== image) return;
+      setImageLoading(false);
+      setImageFailed(false);
+    };
+
+    if (image.complete) {
+      if (image.naturalWidth > 0) finishLoading();
+      else {
+        setImageLoading(false);
+        setImageFailed(true);
+      }
+      return;
+    }
+
+    // Cached images can finish before React attaches the load listener.
+    void image.decode().then(finishLoading).catch(() => undefined);
+  }, []);
+
   const pageUrl = assetUrl(chapter.pages[pageIndex] || "", library.assetBaseUrl);
   const pageLabel = `${chapter.pages.length} 页`;
+  const pageKey = chapter.pages[pageIndex] || "";
+  const pageStreamUrl = isSameOriginAsset(pageUrl)
+    ? pageUrl
+    : assetUrl(pageKey, "/api/media");
+  const { displayUrl: pageDisplayUrl, progress: imageLoadProgress } = useProgressiveImage(
+    pageUrl,
+    pageStreamUrl,
+    imageReloadToken,
+  );
+  const imageLoadPercent = imageLoadProgress?.percent ?? null;
   const preloadPercent = preloadProgress?.total
     ? Math.round((preloadProgress.completed / preloadProgress.total) * 100)
     : 0;
@@ -144,6 +194,12 @@ function ReaderExperience({
     [chapter.pages.length, setSearchParams],
   );
 
+  const retryCurrentPage = useCallback(() => {
+    setImageLoading(true);
+    setImageFailed(false);
+    setImageReloadToken((value) => value + 1);
+  }, []);
+
   useEffect(() => {
     setPageIndex(initialPage);
     setImageLoading(true);
@@ -152,10 +208,10 @@ function ReaderExperience({
   }, [chapter.id, initialPage]);
 
   useEffect(() => {
-    if (mode !== "single") return;
+    if (!imageLoading || mode !== "single") return;
     const current = imageRef.current;
-    if (current?.complete && current.naturalWidth) setImageLoading(false);
-  }, [chapter.pages, library.assetBaseUrl, mode, pageIndex]);
+    if (current?.complete && current.naturalWidth > 0) setImageLoading(false);
+  }, [imageLoading, mode, pageDisplayUrl]);
 
   useEffect(() => {
     const plan = getPreloadPlan();
@@ -546,10 +602,41 @@ function ReaderExperience({
                 <div className="reader-image-loader__label">
                   <LoaderCircle size={21} />
                   <span>正在载入第 {pageIndex + 1} 页</span>
+                  {imageLoadPercent !== null && <strong>{imageLoadPercent}%</strong>}
                 </div>
-                <div className="reader-image-loader__track" aria-hidden="true">
-                  <span />
+                <div
+                  className={cn(
+                    "reader-image-loader__track",
+                    imageLoadPercent !== null && "is-determinate",
+                  )}
+                  role="progressbar"
+                  aria-label={`第 ${pageIndex + 1} 页加载进度`}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={imageLoadPercent ?? undefined}
+                  aria-valuetext={
+                    imageLoadPercent !== null
+                      ? `${imageLoadPercent}%`
+                      : imageLoadProgress?.loadedBytes
+                        ? `已载入 ${formatBytes(imageLoadProgress.loadedBytes)}`
+                        : "正在连接图片源"
+                  }
+                >
+                  <span
+                    style={imageLoadPercent !== null ? { width: `${imageLoadPercent}%` } : undefined}
+                  />
                 </div>
+                <small className="reader-image-loader__bytes">
+                  {imageLoadProgress
+                    ? imageLoadProgress.totalBytes
+                      ? `${formatBytes(imageLoadProgress.loadedBytes)} / ${formatBytes(imageLoadProgress.totalBytes)}`
+                      : imageLoadPercent === 100
+                        ? "已从预载缓存读取"
+                        : imageLoadProgress.loadedBytes > 0
+                          ? `已载入 ${formatBytes(imageLoadProgress.loadedBytes)}`
+                          : "正在连接图片源"
+                    : "正在连接图片源"}
+                </small>
               </div>
             )}
             {imageFailed ? (
@@ -557,16 +644,16 @@ function ReaderExperience({
                 <span>IMAGE NOT FOUND</span>
                 <h2>这一页暂时无法载入。</h2>
                 <p>{chapter.pages[pageIndex]}</p>
-                <button type="button" className="button button--ghost-light" onClick={() => goToPage(pageIndex)}>
+                <button type="button" className="button button--ghost-light" onClick={retryCurrentPage}>
                   重试
                 </button>
               </div>
-            ) : (
+            ) : pageDisplayUrl ? (
               <img
-                key={pageUrl}
-                ref={imageRef}
+                key={pageDisplayUrl}
+                ref={attachPageImage}
                 className={cn("reader-page-image", imageLoading && "is-loading")}
-                src={pageUrl}
+                src={pageDisplayUrl}
                 alt={`${series.title} 第 ${chapter.number} 话第 ${pageIndex + 1} 页`}
                 decoding="async"
                 fetchPriority="high"
@@ -577,7 +664,7 @@ function ReaderExperience({
                 }}
                 draggable={false}
               />
-            )}
+            ) : null}
           </div>
           <button
             type="button"
