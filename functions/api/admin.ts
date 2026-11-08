@@ -41,6 +41,15 @@ function integer(value: unknown, fallback = 0) {
   return Number.isFinite(parsed) ? Math.trunc(parsed) : fallback;
 }
 
+function parseChapterNumber(value: unknown): number | null {
+  if (typeof value === "number") {
+    return Number.isFinite(value) && value >= 0 ? value : null;
+  }
+  if (typeof value !== "string" || !/^\d+(?:\.\d+)?$/.test(value.trim())) return null;
+  const parsed = Number(value.trim());
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
 function getFile(form: FormData | null, name: string) {
   const value = form?.get(name);
   return value && typeof value !== "string" ? value : null;
@@ -166,9 +175,9 @@ async function uploadChapter(env: Env, payload: Payload, form: FormData | null) 
   const series = seriesById(library, seriesId);
   if (!series) return errorResponse("作品不存在", 404, "SERIES_NOT_FOUND");
 
-  const number = integer(payload.number, -1);
-  if (number < 0) return errorResponse("请填写有效的章节号", 422, "INVALID_CHAPTER_NUMBER");
-  const directory = safeDirectory(payload.directory || number);
+  const number = parseChapterNumber(payload.number);
+  if (number === null) return errorResponse("请填写有效的章节号", 422, "INVALID_CHAPTER_NUMBER");
+  const directory = safeDirectory(payload.directory || String(number));
   if (!directory) return errorResponse("章节目录无效", 422, "INVALID_DIRECTORY");
 
   const files = (form?.getAll("files") || [])
@@ -247,9 +256,9 @@ async function importChapter(env: Env, payload: Payload) {
   const series = seriesById(library, text(payload.seriesId));
   if (!series) return errorResponse("作品不存在", 404, "SERIES_NOT_FOUND");
 
-  const number = integer(payload.number, -1);
-  if (number < 0) return errorResponse("请填写有效的章节号", 422, "INVALID_CHAPTER_NUMBER");
-  const directory = safeDirectory(payload.directory || number);
+  const number = parseChapterNumber(payload.number);
+  if (number === null) return errorResponse("请填写有效的章节号", 422, "INVALID_CHAPTER_NUMBER");
+  const directory = safeDirectory(payload.directory || String(number));
   if (!directory) return errorResponse("章节目录无效", 422, "INVALID_DIRECTORY");
   const pages = await listImageKeys(env.MANGA_BUCKET, `${directory}/`);
   if (!pages.length) {

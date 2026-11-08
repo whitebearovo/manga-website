@@ -42,7 +42,10 @@ export function ReaderPage() {
   }
 
   const series = library.series.find((item) => item.id === seriesId);
-  const chapter = series?.chapters.find((item) => String(item.number) === chapterNumber);
+  const requestedChapterNumber = chapterNumber?.trim() ? Number(chapterNumber) : Number.NaN;
+  const chapter = Number.isFinite(requestedChapterNumber)
+    ? series?.chapters.find((item) => item.number === requestedChapterNumber)
+    : undefined;
   if (!series || !chapter) {
     return (
       <div className="reader-missing">

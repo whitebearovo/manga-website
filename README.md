@@ -48,7 +48,10 @@ npm run dev:pages
 ```text
 64/61.png
 65/1.png
+12.5/1.png
 ```
+
+章节号既可以是整数，也可以是小数，例如 `12.5/1.png` 对应章节 `12.5`。小数会按数值排序，并可直接通过 `/read/<作品 ID>/12.5` 打开。
 
 其中第一级是章节号目录，文件名是页码。图片扩展名支持 `png`、`jpg`、`jpeg`、`webp`、`avif` 和 `gif`。
 
@@ -59,9 +62,12 @@ npm run dev:pages
 ### 通过 Wrangler 直接部署
 
 ```powershell
+npm install
 npx wrangler login
 npm run deploy -- --project-name yoru-manga-reader
 ```
+
+部署前必须先安装依赖；如果看到 `tsc` 不是内部或外部命令，通常是因为 `node_modules` 不存在，请先执行 `npm install`。`npm run deploy` 会自动执行构建并调用 `wrangler pages deploy dist`。
 
 `npm run deploy` 会执行 `npm run build`，然后把 `dist` 和 `functions` 部署到 Cloudflare Pages。首次部署时，Wrangler 会在 Cloudflare 上创建同名 Pages 项目。
 
@@ -103,6 +109,7 @@ R2_PUBLIC_BASE_URL=https://manga.mahiru.dpdns.org
 上传章节时可以：
 
 - 上传本地图片并自动按 `1.png`、`2.png` 顺序命名
+- 章节号支持整数和小数，例如 `12`、`12.5`，目录也会按输入的章节号生成
 - 输入已有 R2 目录，扫描其中的图片并导入
 - 覆盖已有章节号
 - 选择是否同时删除 R2 原始图片
@@ -129,11 +136,11 @@ R2 根目录的 `library.json` 结构大致如下：
       "updatedAt": "2026-11-08T00:00:00.000Z",
       "chapters": [
         {
-          "id": "chapter-65",
-          "number": 65,
-          "title": "第十三点的练习室",
-          "directory": "65",
-          "pages": ["65/1.png", "65/2.png"],
+          "id": "chapter-12.5",
+          "number": 12.5,
+          "title": "小数章节示例",
+          "directory": "12.5",
+          "pages": ["12.5/1.png", "12.5/2.png"],
           "publishedAt": "2026-11-08T00:00:00.000Z"
         }
       ]

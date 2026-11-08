@@ -342,6 +342,16 @@ export function AdminPage() {
       setToast({ tone: "error", message: "请先选择作品。" });
       return;
     }
+    const normalizedChapterNumber = chapterNumber.trim();
+    if (!/^\d+(?:\.\d+)?$/.test(normalizedChapterNumber)) {
+      setToast({ tone: "error", message: "请输入有效章节号，例如 12 或 12.5。" });
+      return;
+    }
+    const parsedChapterNumber = Number(normalizedChapterNumber);
+    if (!Number.isFinite(parsedChapterNumber)) {
+      setToast({ tone: "error", message: "章节号超出有效范围。" });
+      return;
+    }
     if (uploadMode === "upload" && !chapterFiles.length) {
       setToast({ tone: "error", message: "请选择漫画图片。" });
       return;
@@ -350,9 +360,9 @@ export function AdminPage() {
     try {
       const payload = {
         seriesId: uploadSeriesId,
-        number: Number(chapterNumber),
-        title: chapterTitle || `第 ${chapterNumber} 话`,
-        directory: directory || chapterNumber,
+        number: parsedChapterNumber,
+        title: chapterTitle || `第 ${normalizedChapterNumber} 话`,
+        directory: directory || normalizedChapterNumber,
         pageStart: Number(pageStart),
         overwrite,
         renumber,
@@ -952,13 +962,15 @@ export function AdminPage() {
                       <input
                         type="number"
                         min="0"
+                        step="any"
+                        inputMode="decimal"
                         value={chapterNumber}
                         onChange={(event) => {
                           const value = event.target.value;
                           setChapterNumber(value);
                           if (!directory || directory === chapterNumber) setDirectory(value);
                         }}
-                        placeholder="67"
+                        placeholder="67.5"
                         required
                       />
                     </label>
@@ -967,7 +979,7 @@ export function AdminPage() {
                       <input
                         value={directory}
                         onChange={(event) => setDirectory(event.target.value)}
-                        placeholder="67"
+                        placeholder="67.5"
                         pattern="[^/]+"
                         required
                       />
