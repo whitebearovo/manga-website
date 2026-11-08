@@ -17,6 +17,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { ErrorState, LoadingState } from "../components/LoadingState";
 import { useLibrary } from "../hooks/useLibrary";
 import { preloadImages } from "../lib/imagePreloader";
+import type { ImagePreloadProgress } from "../lib/imagePreloader";
 import {
   assetUrl,
   cn,
@@ -28,6 +29,10 @@ import type { Chapter, LibraryData, MangaSeries } from "../types";
 
 type ReaderMode = "single" | "continuous";
 type FitMode = "height" | "width";
+
+type PreloadProgressState = ImagePreloadProgress & {
+  status: "loading" | "done";
+};
 
 type NetworkInformationLike = {
   saveData?: boolean;
@@ -115,6 +120,7 @@ function ReaderExperience({
   const [continuousTarget, setContinuousTarget] = useState<number | null>(null);
   const [imageLoading, setImageLoading] = useState(true);
   const [imageFailed, setImageFailed] = useState(false);
+  const [preloadProgress, setPreloadProgress] = useState<PreloadProgressState | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [endCardVisible, setEndCardVisible] = useState(false);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -123,6 +129,9 @@ function ReaderExperience({
 
   const pageUrl = assetUrl(chapter.pages[pageIndex] || "", library.assetBaseUrl);
   const pageLabel = `${chapter.pages.length} 页`;
+  const preloadPercent = preloadProgress?.total
+    ? Math.round((preloadProgress.completed / preloadProgress.total) * 100)
+    : 0;
 
   const goToPage = useCallback(
     (nextPage: number, replace = true) => {
@@ -173,10 +182,28 @@ function ReaderExperience({
       );
     }
 
+    const uniqueUrls = [...new Set(urls)];
+    let cancelled = false;
+    setPreloadProgress(
+      uniqueUrls.length
+        ? { completed: 0, total: uniqueUrls.length, failed: 0, status: "loading" }
+        : null,
+    );
+
     const timer = window.setTimeout(() => {
-      preloadImages([...new Set(urls)], Math.min(2, plan.ahead));
+      void preloadImages(uniqueUrls, Math.min(2, plan.ahead), (progress) => {
+        if (cancelled) return;
+        setPreloadProgress({
+          ...progress,
+          status: progress.completed >= progress.total ? "done" : "loading",
+        });
+      });
     }, 160);
-    return () => window.clearTimeout(timer);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [
     chapter.id,
     chapter.pages,
@@ -197,6 +224,12 @@ function ReaderExperience({
       updatedAt: new Date().toISOString(),
     });
   }, [chapter.id, chapter.number, chapter.pages.length, pageIndex, series.id]);
+
+  useEffect(() => {
+    if (preloadProgress?.status !== "done") return;
+    const timer = window.setTimeout(() => setPreloadProgress(null), 2400);
+    return () => window.clearTimeout(timer);
+  }, [preloadProgress?.status]);
 
   useEffect(() => {
     if (mode !== "continuous") return;
@@ -464,6 +497,39 @@ function ReaderExperience({
         </aside>
       )}
 
+      {preloadProgress && preloadProgress.total > 0 && (
+        <div
+          className={cn(
+            "reader-preload-progress",
+            preloadProgress.status === "done" && "is-complete",
+          )}
+          role="status"
+          aria-live="polite"
+        >
+          <div className="reader-preload-progress__label">
+            <span>
+              {preloadProgress.status === "done"
+                ? preloadProgress.failed > 0
+                  ? `预载结束 · ${preloadProgress.failed} 页失败`
+                  : "后续页面已就绪"
+                : "正在预载后续页面"}
+            </span>
+            <strong>{preloadProgress.completed} / {preloadProgress.total}</strong>
+          </div>
+          <div
+            className="reader-preload-progress__track"
+            role="progressbar"
+            aria-label="后续页面预载进度"
+            aria-valuemin={0}
+            aria-valuemax={preloadProgress.total}
+            aria-valuenow={preloadProgress.completed}
+            aria-valuetext={`已处理 ${preloadProgress.completed} / ${preloadProgress.total} 页`}
+          >
+            <span style={{ width: `${preloadPercent}%` }} />
+          </div>
+        </div>
+      )}
+
       {mode === "single" ? (
         <main
           className={cn("single-reader", fitMode === "width" && "single-reader--fit-width")}
@@ -476,9 +542,14 @@ function ReaderExperience({
         >
           <div className="reader-page-stage">
             {imageLoading && !imageFailed && (
-              <div className="reader-image-loader">
-                <LoaderCircle size={22} />
-                <span>正在翻开第 {pageIndex + 1} 页</span>
+              <div className="reader-image-loader" role="status" aria-live="polite">
+                <div className="reader-image-loader__label">
+                  <LoaderCircle size={21} />
+                  <span>正在载入第 {pageIndex + 1} 页</span>
+                </div>
+                <div className="reader-image-loader__track" aria-hidden="true">
+                  <span />
+                </div>
               </div>
             )}
             {imageFailed ? (

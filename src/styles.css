@@ -1770,15 +1770,114 @@ kbd {
   position: absolute;
   inset: 0;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 13px;
   color: var(--reader-muted);
   font-size: 11px;
 }
 
-.reader-image-loader svg {
+.reader-image-loader__label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.reader-image-loader__label svg {
+  flex: none;
+  color: #e5c5a3;
   animation: spin 1s linear infinite;
+}
+
+.reader-image-loader__track {
+  width: min(190px, 46vw);
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(248, 238, 230, 0.12);
+}
+
+.reader-image-loader__track span {
+  display: block;
+  width: 38%;
+  height: 100%;
+  border-radius: inherit;
+  background: #e5c5a3;
+  animation: reader-image-progress 1.15s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes reader-image-progress {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+
+.reader-preload-progress {
+  position: fixed;
+  z-index: 27;
+  right: 22px;
+  bottom: 100px;
+  width: min(224px, calc(100% - 32px));
+  padding: 12px 14px 13px;
+  border: 1px solid rgba(248, 238, 230, 0.1);
+  border-radius: 16px;
+  background: rgba(40, 33, 28, 0.92);
+  box-shadow: var(--shadow-2);
+  pointer-events: none;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.reader-preload-progress__label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--reader-muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.reader-preload-progress__label span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reader-preload-progress__label strong {
+  flex: none;
+  color: var(--reader-text);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.reader-preload-progress__track {
+  height: 3px;
+  margin-top: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(248, 238, 230, 0.12);
+}
+
+.reader-preload-progress__track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #e5c5a3;
+  transition: width 220ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.reader-preload-progress.is-complete {
+  border-color: rgba(229, 197, 163, 0.22);
+}
+
+.reader-preload-progress.is-complete .reader-preload-progress__track span {
+  background: #f0dcc5;
 }
 
 .reader-image-error {
@@ -4097,6 +4196,14 @@ input[type="checkbox"] {
     width: min(320px, calc(100% - 16px));
   }
 
+  .reader-preload-progress {
+    right: 10px;
+    bottom: 78px;
+    width: min(212px, calc(100% - 20px));
+    padding: 10px 12px 11px;
+    border-radius: 14px;
+  }
+
   .single-reader {
     min-height: 100svh;
     padding: 76px 10px 92px;
@@ -4379,5 +4486,12 @@ input[type="checkbox"] {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+
+  .reader-image-loader__track span {
+    width: 100%;
+    opacity: 0.58;
+    transform: none;
+    animation: none !important;
   }
 }
