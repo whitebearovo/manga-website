@@ -16,6 +16,7 @@ import {
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ErrorState, LoadingState } from "../components/LoadingState";
 import { useLibrary } from "../hooks/useLibrary";
+import { preloadImages } from "../lib/imagePreloader";
 import {
   assetUrl,
   cn,
@@ -27,6 +28,22 @@ import type { Chapter, LibraryData, MangaSeries } from "../types";
 
 type ReaderMode = "single" | "continuous";
 type FitMode = "height" | "width";
+
+type NetworkInformationLike = {
+  saveData?: boolean;
+  effectiveType?: string;
+};
+
+function getPreloadPlan() {
+  const connection = (navigator as Navigator & { connection?: NetworkInformationLike }).connection;
+  const deviceMemory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+  if (connection?.saveData) return { behind: 0, ahead: 1, adjacentChapter: 0 };
+  if (connection?.effectiveType === "slow-2g" || connection?.effectiveType === "2g") {
+    return { behind: 0, ahead: 2, adjacentChapter: 1 };
+  }
+  if (deviceMemory && deviceMemory <= 4) return { behind: 1, ahead: 3, adjacentChapter: 1 };
+  return { behind: 1, ahead: 6, adjacentChapter: 2 };
+}
 
 export function ReaderPage() {
   const { seriesId, chapterNumber } = useParams();
@@ -129,16 +146,45 @@ function ReaderExperience({
     if (mode !== "single") return;
     const current = imageRef.current;
     if (current?.complete && current.naturalWidth) setImageLoading(false);
-
-    if (chapter.pages[pageIndex + 1]) {
-      const preload = new Image();
-      preload.src = assetUrl(chapter.pages[pageIndex + 1], library.assetBaseUrl);
-    }
-    if (chapter.pages[pageIndex - 1]) {
-      const preload = new Image();
-      preload.src = assetUrl(chapter.pages[pageIndex - 1], library.assetBaseUrl);
-    }
   }, [chapter.pages, library.assetBaseUrl, mode, pageIndex]);
+
+  useEffect(() => {
+    const plan = getPreloadPlan();
+    const urls: string[] = [];
+    const start = Math.max(0, pageIndex - plan.behind);
+    const end = Math.min(chapter.pages.length - 1, pageIndex + plan.ahead);
+
+    for (let index = start; index <= end; index += 1) {
+      if (index !== pageIndex) urls.push(assetUrl(chapter.pages[index], library.assetBaseUrl));
+    }
+
+    if (plan.adjacentChapter && nextChapter && pageIndex >= chapter.pages.length - 3) {
+      urls.push(
+        ...nextChapter.pages
+          .slice(0, plan.adjacentChapter)
+          .map((key) => assetUrl(key, library.assetBaseUrl)),
+      );
+    }
+    if (plan.adjacentChapter && previousChapter && pageIndex <= 1) {
+      urls.push(
+        ...previousChapter.pages
+          .slice(-plan.adjacentChapter)
+          .map((key) => assetUrl(key, library.assetBaseUrl)),
+      );
+    }
+
+    const timer = window.setTimeout(() => {
+      preloadImages([...new Set(urls)], Math.min(2, plan.ahead));
+    }, 160);
+    return () => window.clearTimeout(timer);
+  }, [
+    chapter.id,
+    chapter.pages,
+    library.assetBaseUrl,
+    nextChapter,
+    pageIndex,
+    previousChapter,
+  ]);
 
   useEffect(() => {
     if (!chapter.pages.length) return;
@@ -451,6 +497,8 @@ function ReaderExperience({
                 className={cn("reader-page-image", imageLoading && "is-loading")}
                 src={pageUrl}
                 alt={`${series.title} 第 ${chapter.number} 话第 ${pageIndex + 1} 页`}
+                decoding="async"
+                fetchPriority="high"
                 onLoad={() => setImageLoading(false)}
                 onError={() => {
                   setImageLoading(false);
@@ -523,7 +571,13 @@ function ReaderExperience({
                 <img
                   src={assetUrl(key, library.assetBaseUrl)}
                   alt={`${series.title} 第 ${chapter.number} 话第 ${index + 1} 页`}
-                  loading={continuousTarget !== null && index <= continuousTarget ? "eager" : index < 2 ? "eager" : "lazy"}
+                  loading={
+                    (continuousTarget !== null && index <= continuousTarget) || index <= pageIndex + 2
+                      ? "eager"
+                      : "lazy"
+                  }
+                  decoding="async"
+                  fetchPriority={index === pageIndex ? "high" : "auto"}
                   draggable={false}
                 />
               </div>
