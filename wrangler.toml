@@ -1,0 +1,11 @@
+name = "yoru-manga-reader"
+pages_build_output_dir = "dist"
+compatibility_date = "2025-10-01"
+
+# R2 绑定：当前使用 manga 存储桶；如改桶名，请同步修改 bucket_name。
+[[r2_buckets]]
+binding = "MANGA_BUCKET"
+bucket_name = "manga"
+
+[vars]
+R2_PUBLIC_BASE_URL = "https://manga.mahiru.dpdns.org"
