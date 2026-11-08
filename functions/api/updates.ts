@@ -34,6 +34,7 @@ export const onRequestGet: PagesHandler = async (context) => {
   }
 
   const seriesId = (url.searchParams.get("seriesId") || "").trim();
+  const requestedAt = new Date().toISOString();
   try {
     const library = await readLibrary(env.MANGA_BUCKET);
     const allUpdates = buildUpdateItems(library, env, context.request.url).filter(
@@ -42,10 +43,15 @@ export const onRequestGet: PagesHandler = async (context) => {
     const updates = filterUpdatesSince(allUpdates, since);
     const generatedAt = new Date().toISOString();
     const latestUpdateAt = allUpdates[0]?.updatedAt || library.updatedAt;
-    const cursor =
+    const candidateCursor =
       new Date(latestUpdateAt).getTime() > new Date(library.updatedAt).getTime()
         ? latestUpdateAt
         : library.updatedAt;
+    const candidateTime = new Date(candidateCursor).getTime();
+    const cursor =
+      Number.isNaN(candidateTime) || candidateTime > new Date(requestedAt).getTime()
+        ? requestedAt
+        : candidateCursor;
 
     return apiJson({
       ok: true,
