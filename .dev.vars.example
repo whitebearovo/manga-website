@@ -1,3 +1,9 @@
 # Cloudflare Pages Function 的环境变量，复制为 .dev.vars 后填写。
 ADMIN_TOKEN=replace-with-a-long-random-token
 R2_PUBLIC_BASE_URL=https://manga.mahiru.dpdns.org
+UPDATE_API_TOKEN=replace-with-a-separate-update-webhook-token
+QQ_BOT_WEBHOOK_URL=https://qq-bot.example.com/yoru/update
+QQ_BOT_WEBHOOK_TOKEN=replace-with-your-qq-bot-webhook-token
+# QQ_BOT_GROUP_ID=123456789
+# QQ_BOT_USER_ID=123456789
+# SITE_URL=https://yoru-manga-reader.pages.dev

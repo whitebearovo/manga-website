@@ -5,6 +5,12 @@ export interface Env {
   MANGA_BUCKET: R2Bucket;
   ADMIN_TOKEN?: string;
   R2_PUBLIC_BASE_URL?: string;
+  UPDATE_API_TOKEN?: string;
+  SITE_URL?: string;
+  QQ_BOT_WEBHOOK_URL?: string;
+  QQ_BOT_WEBHOOK_TOKEN?: string;
+  QQ_BOT_GROUP_ID?: string;
+  QQ_BOT_USER_ID?: string;
 }
 
 export const LIBRARY_KEY = "library.json";
