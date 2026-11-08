@@ -65,6 +65,16 @@ npm run deploy -- --project-name yoru-manga-reader
 
 `npm run deploy` 会执行 `npm run build`，然后把 `dist` 和 `functions` 部署到 Cloudflare Pages。首次部署时，Wrangler 会在 Cloudflare 上创建同名 Pages 项目。
 
+> **不要对 Pages 项目执行 `npx wrangler deploy`。** 该命令用于 Workers，会出现 `wrangler pages deploy should be used instead` 并最终报 `Missing entry-point`。
+
+如果 Cloudflare 的 Git 构建设置中有独立的 **Deploy command** 字段，请使用：
+
+```bash
+npx wrangler pages deploy dist --project-name=yoru-manga-reader
+```
+
+如果使用的是标准 Pages Git 集成，则 **Deploy command 留空**，由 Pages 自动上传 `dist`，只填写 Build command：`npm run build`。
+
 部署完成后，在 Cloudflare Pages 项目的 **Settings → Variables and Secrets** 中添加：
 
 ```text
@@ -81,6 +91,7 @@ R2_PUBLIC_BASE_URL=https://manga.mahiru.dpdns.org
 - Framework preset：`Vite`
 - Build command：`npm run build`
 - Build output directory：`dist`
+- Deploy command：留空，或使用 `npx wrangler pages deploy dist --project-name=yoru-manga-reader`
 - R2 binding：`MANGA_BUCKET` → `manga`
 
 保存环境变量 `ADMIN_TOKEN` 和 `R2_PUBLIC_BASE_URL` 后重新部署。

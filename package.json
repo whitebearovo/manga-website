@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "dev:pages": "npm run build && wrangler pages dev dist",
-    "deploy": "npm run build && wrangler pages deploy dist"
+    "deploy": "npm run deploy:pages",
+    "deploy:pages": "npm run build && wrangler pages deploy dist --project-name=yoru-manga-reader"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
