@@ -11,7 +11,7 @@
 - 根据网络和设备状态预加载后续页面，并配合 R2 的 `immutable` 缓存优化翻页
 - 当前页通过同源 R2 串流显示真实下载百分比与已载入大小，并实时显示后续页面的预载完成数
 - 阅读进度保存在浏览器 `localStorage`
-- 提供漫画更新状态 API，并可把章节更新推送到 QQ Bot Webhook
+- 提供漫画更新状态 API，以及适合 WebSocket QQ Bot 的 pull / ack 通知接口
 - 管理端登录后新建/编辑作品、上传封面和章节图片
 - 扫描 R2 已有章节目录并导入
 - 覆盖章节、删除章节/作品，可选同时删除 R2 图片
@@ -90,11 +90,9 @@ npx wrangler pages deploy dist --project-name=yoru-manga-reader
 ADMIN_TOKEN=<足够长的随机管理口令>
 R2_PUBLIC_BASE_URL=https://manga.mahiru.dpdns.org
 UPDATE_API_TOKEN=<用于更新推送接口的独立口令>
-QQ_BOT_WEBHOOK_URL=https://your-qq-bot.example.com/yoru/update
-QQ_BOT_WEBHOOK_TOKEN=<QQ Bot Webhook 的 Bearer Token>
 ```
 
-`UPDATE_API_TOKEN` 可用单独的 Secret；如果未设置，通知接口会回退使用 `ADMIN_TOKEN`。`QQ_BOT_WEBHOOK_TOKEN`、`QQ_BOT_GROUP_ID`、`QQ_BOT_USER_ID` 和 `SITE_URL` 都是可选配置。
+`UPDATE_API_TOKEN` 可用单独的 Secret；如果未设置，通知接口会回退使用 `ADMIN_TOKEN`。`SITE_URL` 是可选配置，用于固定提醒中的站点链接。
 
 `ADMIN_TOKEN` 必须设置为 Secret，不要写在前端代码或提交到仓库。R2 绑定已在 `wrangler.toml` 配置为 `MANGA_BUCKET`；如果使用控制台部署，请在 **Settings → Functions → R2 bucket bindings** 中创建同名绑定。
 
@@ -108,70 +106,33 @@ QQ_BOT_WEBHOOK_TOKEN=<QQ Bot Webhook 的 Bearer Token>
 - Deploy command：留空，或使用 `npx wrangler pages deploy dist --project-name=yoru-manga-reader`
 - R2 binding：`MANGA_BUCKET` → `manga`
 
-保存所需环境变量后重新部署。未启用 QQ 提醒时，可以不设置 `QQ_BOT_WEBHOOK_URL`。
+保存所需环境变量后重新部署。WebSocket QQ Bot 会主动拉取更新，不需要设置任何 Webhook。
 
 ## 更新状态与 QQ Bot API
 
 ### 查询当前更新状态
 
-公开接口 `GET /api/updates` 会返回每部作品的最新章节、页数、作品状态和阅读链接。可使用 `since` 只取指定时间之后的更新，并可用 `seriesId` 筛选作品：
+公开接口 `GET /api/updates` 返回每部作品的最新章节、作品状态、页数和阅读链接。支持 `since` 增量查询与 `seriesId` 筛选：
 
 ```bash
 curl "https://yoru-manga-reader.pages.dev/api/updates"
 curl "https://yoru-manga-reader.pages.dev/api/updates?since=2026-11-08T00:00:00.000Z"
-curl "https://yoru-manga-reader.pages.dev/api/updates?seriesId=sassakoi"
 ```
 
-`since` 同时支持 ISO 时间和 Unix 时间戳。响应的 `cursor` 来自已读取的 R2 索引更新时间，保存后可作为下一次请求的 `since`，避免在读取与响应之间发生的新章节被漏掉。接口允许跨域读取，并返回 `Cache-Control: no-store`。
+### WebSocket QQ Bot 拉取通知
 
-### 推送到 QQ Bot
+QQ Bot 不需要 Webhook。Bot 保持现有 QQ WebSocket 连接，另外定时调用以下两个接口：
 
-受保护接口 `POST /api/notify/qq` 会比对 R2 中的 `notifications/qq-state.json`，只有最新章节发生变化时才向 `QQ_BOT_WEBHOOK_URL` 发送提醒。首次调用只建立通知基准，不会把全部历史章节直接推送。
+1. `POST /api/notifications/qq/pull`：取得未通知更新。
+2. 使用现有 WebSocket 发送 `batch.text`。
+3. 发送成功后调用 `POST /api/notifications/qq/ack`，提交 `signatures`。
 
 ```bash
-curl -X POST "https://yoru-manga-reader.pages.dev/api/notify/qq" \
-  -H "Authorization: Bearer $UPDATE_API_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "{\"dryRun\":true,\"force\":true}"
+curl -X POST "https://yoru-manga-reader.pages.dev/api/notifications/qq/pull" \
+  -H "Authorization: Bearer $UPDATE_API_TOKEN"
 ```
 
-请求体可选字段：
-
-- `dryRun`：返回将发送的内容，但不调用 Webhook，也不更新 R2 状态。
-- `force`：忽略通知基准，立即推送目前所有作品状态；适合首次测试。
-- `since`：只推送该时间之后更新的作品，可覆盖基准判断。
-- `seriesId`：只检查或推送指定作品。
-
-Webhook 会收到 `application/json`，主要结构如下：
-
-```json
-{
-  "event": "manga.update",
-  "version": 1,
-  "createdAt": "2026-11-08T00:00:00.000Z",
-  "text": "【夜页漫画更新】\n《作品名》更新至第 62.5 话...",
-  "target": { "groupId": "123456789" },
-  "updates": [
-    {
-      "seriesId": "sassakoi",
-      "title": "作品名",
-      "status": "连载中",
-      "updatedAt": "2026-11-08T00:00:00.000Z",
-      "seriesUrl": "https://yoru-manga-reader.pages.dev/series/sassakoi",
-      "latestChapter": {
-        "number": 62.5,
-        "title": "电话、报告、恋人",
-        "pageCount": 17,
-        "url": "https://yoru-manga-reader.pages.dev/read/sassakoi/62.5"
-      }
-    }
-  ]
-}
-```
-
-QQ Bot 程序只需接收这个 JSON，并返回任意 `2xx` 状态码；随后可使用其中的 `text` 字段发送群消息，或解析 `updates` 生成更丰富的卡片。Webhook 返回非 `2xx` 时不会更新通知基准，下一次调用会重试。
-
-可将 `POST /api/notify/qq` 放到 Cloudflare Cron Trigger、服务器 crontab 或现有 QQ Bot 的定时任务中，每隔数分钟调用一次。`Authorization` 也可以改用 `X-Webhook-Token` 请求头。
+完整的请求格式、TypeScript 型别、Node.js 范例、ACK 时序与可直接交给另一个对话的实现提示词，请见 **[WebSocket QQ Bot 接入指引](docs/QQ_BOT_WEBSOCKET_GUIDE.md)**。
 
 ## 管理端
 

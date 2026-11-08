@@ -1,13 +1,20 @@
 import type { R2Bucket } from "@cloudflare/workers-types";
 import type { LibraryData, MangaSeries } from "../src/types";
-import { getAssetBase, json, sortChapters, type Env } from "./_lib";
+import {
+  constantTimeEqual,
+  errorResponse,
+  getAssetBase,
+  json,
+  sortChapters,
+  type Env,
+} from "./_lib";
 
 export const QQ_NOTIFICATION_STATE_KEY = "notifications/qq-state.json";
 
 const CORS_HEADERS = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET, POST, OPTIONS",
-  "access-control-allow-headers": "Authorization, Content-Type, X-Webhook-Token",
+  "access-control-allow-headers": "Authorization, Content-Type",
   "access-control-max-age": "86400",
 };
 
@@ -37,16 +44,12 @@ export interface QQNotificationState {
   notifiedAt: string;
 }
 
-export interface QQWebhookEvent {
+export interface QQUpdateBatch {
   event: "manga.update";
   version: 1;
   createdAt: string;
   siteUrl: string;
   text: string;
-  target?: {
-    groupId?: string;
-    userId?: string;
-  };
   updates: MangaUpdateStatus[];
 }
 
@@ -68,6 +71,25 @@ export function apiJson(data: unknown, init: ResponseInit = {}) {
 
 export function apiOptions() {
   return new Response(null, { status: 204, headers: CORS_HEADERS });
+}
+
+export function requireUpdateApiToken(request: Request, env: Env) {
+  const expected = String(env.UPDATE_API_TOKEN || env.ADMIN_TOKEN || "").trim();
+  if (!expected) {
+    return errorResponse(
+      "服务端尚未设置 UPDATE_API_TOKEN 或 ADMIN_TOKEN",
+      503,
+      "UPDATE_TOKEN_MISSING",
+    );
+  }
+
+  const authorization = request.headers.get("authorization") || "";
+  const bearer = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
+  const provided = bearer;
+  if (!provided || !constantTimeEqual(provided, expected)) {
+    return errorResponse("更新 API 口令不正确", 401, "UNAUTHORIZED");
+  }
+  return null;
 }
 
 export function parseSince(value: unknown) {
@@ -111,26 +133,17 @@ export function getSiteUrl(env: Env, requestUrl: string) {
   return configured.replace(/\/+$/, "");
 }
 
-export function buildQQEvent(
+export function buildQQUpdateBatch(
   updates: MangaUpdateStatus[],
   env: Env,
   requestUrl: string,
-): QQWebhookEvent {
-  const target =
-    env.QQ_BOT_GROUP_ID || env.QQ_BOT_USER_ID
-      ? {
-          ...(env.QQ_BOT_GROUP_ID ? { groupId: env.QQ_BOT_GROUP_ID } : {}),
-          ...(env.QQ_BOT_USER_ID ? { userId: env.QQ_BOT_USER_ID } : {}),
-        }
-      : undefined;
-
+): QQUpdateBatch {
   return {
     event: "manga.update",
     version: 1,
     createdAt: new Date().toISOString(),
     siteUrl: getSiteUrl(env, requestUrl),
     text: buildQQMessage(updates),
-    target,
     updates,
   };
 }
@@ -175,9 +188,16 @@ export async function readQQNotificationState(bucket: R2Bucket) {
 }
 
 export async function writeQQNotificationState(bucket: R2Bucket, updates: MangaUpdateStatus[]) {
+  return writeQQNotificationSignatures(bucket, signaturesOf(updates));
+}
+
+export async function writeQQNotificationSignatures(
+  bucket: R2Bucket,
+  signatures: Record<string, string>,
+) {
   const state: QQNotificationState = {
     version: 1,
-    signatures: signaturesOf(updates),
+    signatures,
     notifiedAt: new Date().toISOString(),
   };
   await bucket.put(QQ_NOTIFICATION_STATE_KEY, JSON.stringify(state, null, 2), {
